@@ -43,7 +43,7 @@ def run_command(cmd, shell=False, check=True):
     if check and proc.wait() != 0:
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
-def pip_install(python_exe: Path, req_file: str, constraints: str, find_links: str, label: str):
+def pip_install(python_exe: Path, req_file: str, constraints: str, find_links: str, label: str, options:[]):
     if req_file and Path(req_file).exists():
         cmd = [
             str(python_exe), "-m", "pip", "install",
@@ -51,6 +51,8 @@ def pip_install(python_exe: Path, req_file: str, constraints: str, find_links: s
             "--pre", "--no-index", f"--find-links={find_links}",
             "--upgrade", "--no-warn-script-location"
         ]
+        if options:
+            cmd += options
         log_section(f"Pip-install {label}")
         run_command(cmd)
     else:
@@ -218,7 +220,7 @@ def main():
         ("Pre", args.pre_req),
         ("Main", args.requirements),
     ]:
-        pip_install(target_python, req, args.constraints, args.find_links, label)
+        pip_install(target_python, req, args.constraints, args.find_links, label, ["--force-reinstall"])
 
     log_section("🙏 Step 4: Patch Winpython")
     patch_winpython(target_python)
