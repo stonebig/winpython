@@ -43,6 +43,7 @@ class PipData:
         self.raw: Dict[str, Dict] = {}
         self.environment = self._get_environment()
         self._marker_evals: Dict[Tuple[str, str], bool] = {}
+        self._reported_cycles: set = set()
         try:
             packages = self._get_packages(target or sys.executable, wheelhouse)
             self._process_packages(packages)
@@ -180,7 +181,14 @@ class PipData:
 
         full_name = f"{package_name}[{extra}]" if extra else package_name
         if full_name in path:
-            logger.warning(f"Cycle detected: {' -> '.join(path + [full_name])}")
+            # report only the cycle itself (not the path leading to it), and only once:
+            # the same loop reached from other roots or entered at another point is not news
+            cycle = path[path.index(full_name):]
+            rotation = cycle.index(min(cycle))
+            canonical = tuple(cycle[rotation:] + cycle[:rotation])
+            if canonical not in self._reported_cycles:
+                self._reported_cycles.add(canonical)
+                logger.warning(f"Cycle detected: {' -> '.join(cycle + [full_name])}")
             return []
 
         pkg_data = self.distro[pkg_key]

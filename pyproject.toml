@@ -12,7 +12,7 @@ dependencies = [
     "packaging",
 ]
 requires-python = ">=3.10"
-readme = "README.rst"
+readme = "README_PYPI.md"
 license = {file = "LICENSE"}
 classifiers=[
     'License :: OSI Approved :: MIT License',
@@ -33,6 +33,7 @@ keywords = ["Portable","Windows"]
 [project.urls]
 Documentation = "https://winpython.github.io/"
 Source = "https://github.com/winpython/winpython"
+Issues = "https://github.com/winpython/winpython/issues"
 
 [project.scripts]
 wppm = "wppm.wppm:main"
