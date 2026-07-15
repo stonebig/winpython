@@ -42,6 +42,7 @@ class PipData:
         self.distro: Dict[str, Dict] = {}
         self.raw: Dict[str, Dict] = {}
         self.environment = self._get_environment()
+        self._marker_evals: Dict[Tuple[str, str], bool] = {}
         try:
             packages = self._get_packages(target or sys.executable, wheelhouse)
             self._process_packages(packages)
@@ -160,6 +161,15 @@ class PipData:
                             self.distro[target_key]["provided"][req["req_marker"].split('extra == ')[1].translate(remove_list)] = None
                     self.distro[target_key]["reverse_dependencies"].append(rev_dep)
 
+    def _marker_true(self, marker: str, extra: str) -> bool:
+        """Evaluate a requirement marker for a given extra, memoized (environment is fixed per instance)."""
+        key = (marker, extra)
+        result = self._marker_evals.get(key)
+        if result is None:
+            result = Marker(marker).evaluate(environment={"extra": extra, **self.environment})
+            self._marker_evals[key] = result
+        return result
+
     def _get_dependency_tree(self, package_name: str, extra: str = "", version_req: str = "", depth: int = 20, path: Optional[List[str]] = None, verbose: bool = False, upward: bool = False, ppend: str="") -> List[List[str]]:
         """Recursive function to build dependency tree."""
         path = path or []
@@ -176,7 +186,6 @@ class PipData:
         pkg_data = self.distro[pkg_key]
         if pkg_data and len(path) <= depth:
             for extra in extras:
-                environment = {"extra": extra, **self.environment}
                 summary = f'  {pkg_data["summary"]}' if verbose else ''
                 base_name = f'{package_name}[{extra}]' if extra else package_name
                 ret = [f'{base_name}=={pkg_data["version"]} {version_req}{summary}']
@@ -196,10 +205,10 @@ class PipData:
                                 if (not dependency.get("req_marker") and extra == "") or \
                                    ("req_marker" in dependency and extra == up_req and \
                                     dependency["req_key"] != pkg_key and \
-                                    Marker(dependency["req_marker"]).evaluate(environment=environment)) or \
+                                    self._marker_true(dependency["req_marker"], extra)) or \
                                    ("req_marker" in dependency and extra != "" and \
                                     extra + ',' in dependency["req_extra"] + ',' and \
-                                    Marker(dependency["req_marker"]).evaluate(environment=environment | {"extra": up_req})):
+                                    self._marker_true(dependency["req_marker"], up_req)):
                                     # IA risk error: # dask[array] go upwards as dask[dataframe], so {"extra": up_req} , not {"extra": extra}
                                     #tag upward limiting dependancies
                                     wall = " " if dependency["req_version"][:1] == "~" or dependency["req_version"].startswith("==") or "<" in dependency["req_version"] else ""
@@ -216,7 +225,7 @@ class PipData:
                                             verbose=verbose,
                                             upward=upward,
                                         )
-                        elif not dependency.get("req_marker") or Marker(dependency["req_marker"]).evaluate(environment=environment):
+                        elif not dependency.get("req_marker") or self._marker_true(dependency["req_marker"], extra):
                             #tag downward missing dependancies
                             wall = ""
                             if ppend=="" or wall==" ":
@@ -229,7 +238,7 @@ class PipData:
                                     verbose=verbose,
                                     upward=upward,
                                 )
-                    elif not upward and (not dependency.get("req_marker") or Marker(dependency["req_marker"]).evaluate(environment=environment)):
+                    elif not upward and (not dependency.get("req_marker") or self._marker_true(dependency["req_marker"], extra)):
                         # not there but was required
                         wall_hit += " "
                         ret += [[f'{dependency["req_key"]}==? {dependency["req_version"]}']]
