@@ -246,7 +246,7 @@ class PipData:
                                     verbose=verbose,
                                     upward=upward,
                                 )
-                    elif not upward and (not dependency.get("req_marker") or self._marker_true(dependency["req_marker"], extra)):
+                    elif not upward and len(path) < depth and (not dependency.get("req_marker") or self._marker_true(dependency["req_marker"], extra)):
                         # not there but was required
                         wall_hit += " "
                         ret += [[f'{dependency["req_key"]}==? {dependency["req_version"]}']]
@@ -269,9 +269,10 @@ class PipData:
             if extra == ".":
                 for one_extra in sorted(self.distro[p]["provides"]):
                     a =  self._get_dependency_tree(p, one_extra, version_req, depth, verbose=verbose, ppend=ppend)
+                    results += a if (len(a[0])>1 or ppend=="") else []
             else:
                 a = self._get_dependency_tree(p, extra, version_req, depth, verbose=verbose, ppend=ppend)
-            results += a if (len(a[0])>1 or ppend=="") else []    
+                results += a if (len(a[0])>1 or ppend=="") else []
         rawtext = json.dumps(results, indent=indent)
         lines = [l[2*indent:] for l in rawtext.split("\n") if len(l.strip()) > 2]
         return "\n".join(lines).replace('"', "")

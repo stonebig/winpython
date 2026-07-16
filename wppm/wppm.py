@@ -298,7 +298,7 @@ def main(test=False):
         pip = piptree.PipData(targetpython, args.wheelsource)
         for args_fname in args.fname:
             pack, extra, *other = (args_fname + "[").replace("]", "[").split("[")
-            print(pip.down(pack, extra, args.levels if args.levels>0 else 2, verbose=args.verbose))
+            print(pip.down(pack, extra, args.levels if args.levels>=0 else 2, verbose=args.verbose))
         sys.exit()
     elif args.pipup:
         pip = piptree.PipData(targetpython, args.wheelsource)
