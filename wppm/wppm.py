@@ -284,18 +284,18 @@ def main(test=False):
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
 
-    registerWinPythonHelp = f"Register WinPython: associate file extensions, icons and context menu with this WinPython"
-    unregisterWinPythonHelp = f"Unregister WinPython: de-associate file extensions, icons and context menu from this WinPython"
+    registerWinPythonHelp = f"Register the target Python: associate file extensions, icons and context menu with it (useful for portable distributions like WinPython)"
+    unregisterWinPythonHelp = f"Unregister the target Python: de-associate file extensions, icons and context menu from it"
     parser = ArgumentParser(prog="wppm",
-        description=f"WinPython Package Manager: handle a WinPython Distribution and its packages ({__version__})",
+        description=f"WinPython Package Manager: handle a Python distribution (WinPython or not) and its packages ({__version__})",
         formatter_class=RawTextHelpFormatter,
     )
     parser.add_argument("fname", metavar="package(s) or lockfile", nargs="*", default=[""], type=str, help="optional package names, wheels, or lockfile")
     parser.add_argument("-v", "--verbose", action="store_true", help="show more details on packages and actions")
     parser.add_argument( "--register", dest="registerWinPython", action="store_true", help=registerWinPythonHelp)
     parser.add_argument("--unregister", dest="unregisterWinPython", action="store_true", help=unregisterWinPythonHelp)
-    parser.add_argument("--fix", action="store_true", help="make WinPython fix")
-    parser.add_argument("--movable", action="store_true", help="make WinPython movable")
+    parser.add_argument("--fix", action="store_true", help="make the target Python use absolute (fixed) paths in launchers and shebangs")
+    parser.add_argument("--movable", action="store_true", help="make the target Python movable/portable: relative paths in launchers and shebangs")
     parser.add_argument("-ws", dest="wheelsource", default=None, type=str, help="wheels location, ('.' = WheelHouse): wppm pylock.toml -ws source_of_wheels, wppm -ls -ws .")
     parser.add_argument("-wd", dest="wheeldrain" , default=None, type=str, help="wheels destination: wppm pylock.toml -wd destination_of_wheels")
     parser.add_argument("-ls", "--list", action="store_true", help="list installed packages matching [optional] expression: wppm -ls, wppm -ls pand")
