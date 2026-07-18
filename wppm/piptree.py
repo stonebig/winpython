@@ -171,8 +171,8 @@ class PipData:
             self._marker_evals[key] = result
         return result
 
-    def _get_dependency_tree(self, package_name: str, extra: str = "", version_req: str = "", depth: int = 20, path: Optional[List[str]] = None, verbose: bool = False, upward: bool = False, ppend: str="") -> List[List[str]]:
-        """Recursive function to build dependency tree."""
+    def _get_dependency_tree(self, package_name: str, extra: str = "", version_req: Union[str, Dict] = "", depth: int = 20, path: Optional[List[str]] = None, verbose: bool = False, upward: bool = False, ppend: str="") -> List[Dict]:
+        """Recursive function to build dependency tree as a list of node dicts, one per requested extra."""
         path = path or []
         extras = extra.split(",")
         pkg_key = self.normalize(package_name)
@@ -194,9 +194,23 @@ class PipData:
         pkg_data = self.distro[pkg_key]
         if pkg_data and len(path) <= depth:
             for extra in extras:
-                summary = f'  {pkg_data["summary"]}' if verbose else ''
                 base_name = f'{package_name}[{extra}]' if extra else package_name
-                ret = [f'{base_name}=={pkg_data["version"]} {version_req}{summary}']
+                node = {
+                    "package": package_name,
+                    "extra": extra,
+                    "version": pkg_data["version"],
+                    "installed": True,
+                    "constraint": version_req,
+                    "depends": [],
+                }
+                if isinstance(version_req, dict):
+                    # upward annotation: which requirement of the package below brought us here
+                    node["requires"] = version_req
+                    node["constraint"] = (f'[requires: {version_req["package"]}'
+                        + (f'[{version_req["extra"]}]' if version_req["extra"] != "" else "")
+                        + f'{version_req["spec"]}]')
+                if verbose:
+                    node["summary"] = pkg_data["summary"]
 
                 dependencies = pkg_data["requires_dist"] if not upward else pkg_data["reverse_dependencies"]
 
@@ -222,12 +236,10 @@ class PipData:
                                     wall = " " if dependency["req_version"][:1] == "~" or dependency["req_version"].startswith("==") or "<" in dependency["req_version"] else ""
                                     wall_hit += wall
                                     if ppend=="" or wall==" ":
-                                        ret += self._get_dependency_tree(
+                                        node["depends"] += self._get_dependency_tree(
                                             dependency["req_key"],
                                             up_req,
-                                            f"[requires: {package_name}"
-                                            + (f"[{dependency['req_extra']}]" if dependency["req_extra"] != "" else "")
-                                            + f'{dependency["req_version"]}]',
+                                            {"package": package_name, "extra": dependency["req_extra"], "spec": dependency["req_version"]},
                                             depth,
                                             next_path,
                                             verbose=verbose,
@@ -237,7 +249,7 @@ class PipData:
                             #tag downward missing dependancies
                             wall = ""
                             if ppend=="" or wall==" ":
-                                ret += self._get_dependency_tree(
+                                node["depends"] += self._get_dependency_tree(
                                     dependency["req_key"],
                                     dependency["req_extra"],
                                     dependency["req_version"],
@@ -249,16 +261,48 @@ class PipData:
                     elif not upward and len(path) < depth and (not dependency.get("req_marker") or self._marker_true(dependency["req_marker"], extra)):
                         # not there but was required
                         wall_hit += " "
-                        ret += [[f'{dependency["req_key"]}==? {dependency["req_version"]}']]
+                        node["depends"].append({
+                            "package": dependency["req_key"],
+                            "extra": dependency["req_extra"],
+                            "version": None,
+                            "installed": False,
+                            "constraint": dependency["req_version"],
+                            "depends": [],
+                        })
 
-                ret_all.append(ret)
+                ret_all.append(node)
         if ppend=="" or wall_hit != "":
             return ret_all
         else:
-            return [""]
+            return []
 
-    def down(self, ppw: str = "", extra: str = "", depth: int = 20, indent: int = 4, version_req: str = "", verbose: bool = False) -> str:
-        """Generate downward dependency tree as formatted string."""
+    def _node_text(self, node: Dict) -> str:
+        """Render a tree node dict as its one-line text form."""
+        if not node["installed"]:
+            return f'{node["package"]}==? {node["constraint"]}'
+        summary = f'  {node["summary"]}' if "summary" in node else ''
+        base_name = f'{node["package"]}[{node["extra"]}]' if node["extra"] else node["package"]
+        return f'{base_name}=={node["version"]} {node["constraint"]}{summary}'
+
+    def _node_lines(self, node: Dict) -> List:
+        """Convert a tree node dict to nested lists of text lines, for indented display."""
+        ret = [self._node_text(node)]
+        for child in node["depends"]:
+            ret.append(self._node_lines(child))
+        return ret
+
+    def _format_tree(self, results: List[Dict], indent: int, format: str, updown: str = "down") -> str:
+        """Render collected tree node dicts as indented text or JSON."""
+        if format == "json":
+            return json.dumps(results, indent=indent)
+        rawtext = json.dumps([self._node_lines(node) for node in results], indent=indent)
+        lines = [l[2*indent:] for l in rawtext.split("\n") if len(l.strip()) > 2]
+        if updown == "up":
+            return "\n".join(filter(None, lines)).replace('"', "")
+        return "\n".join(lines).replace('"', "")
+
+    def down(self, ppw: str = "", extra: str = "", depth: int = 20, indent: int = 4, version_req: str = "", verbose: bool = False, format: str = "text") -> str:
+        """Generate downward dependency tree, as indented text or JSON (format="json")."""
         pp = ppw[:-1] if ppw.endswith('!') else ppw
         ppend = "!" if ppw.endswith('!') else "" #show only downward missing dependancies
         ppp = [pp] if pp in self.distro else ()
@@ -269,18 +313,16 @@ class PipData:
             if extra == ".":
                 for one_extra in sorted(self.distro[p]["provides"]):
                     a =  self._get_dependency_tree(p, one_extra, version_req, depth, verbose=verbose, ppend=ppend)
-                    results += a if (len(a[0])>1 or ppend=="") else []
+                    results += a if a and (a[0]["depends"] or ppend=="") else []
             else:
                 a = self._get_dependency_tree(p, extra, version_req, depth, verbose=verbose, ppend=ppend)
-                results += a if (len(a[0])>1 or ppend=="") else []
-        rawtext = json.dumps(results, indent=indent)
-        lines = [l[2*indent:] for l in rawtext.split("\n") if len(l.strip()) > 2]
-        return "\n".join(lines).replace('"', "")
+                results += a if a and (a[0]["depends"] or ppend=="") else []
+        return self._format_tree(results, indent, format, "down")
 
-    def up(self, ppw: str, extra: str = "", depth: int = 20, indent: int = 4, version_req: str = "", verbose: bool = False) -> str:
-        """Generate upward dependency tree as formatted string."""
+    def up(self, ppw: str, extra: str = "", depth: int = 20, indent: int = 4, version_req: str = "", verbose: bool = False, format: str = "text") -> str:
+        """Generate upward dependency tree, as indented text or JSON (format="json")."""
         pp = ppw[:-1] if ppw.endswith('!') else ppw
-        ppend = "!" if ppw.endswith('!') else "" #show only downward limiting dependancies
+        ppend = "!" if ppw.endswith('!') else "" #show only upward limiting dependancies
         ppp = [pp] if pp in self.distro else ()
         if pp == ".":
            ppp = [p for p in self.distro]
@@ -290,14 +332,11 @@ class PipData:
                 extras = set(self.distro[p]["provided"]).union(set(self.distro[p]["provides"]))
                 for e in sorted(extras):
                     a = self._get_dependency_tree(p, e, version_req, depth, verbose=verbose, upward=True, ppend=ppend)
-                    results += a if (len(a[0])>1 or ppend=="") else []
+                    results += a if a and (a[0]["depends"] or ppend=="") else []
             else:
                 a = self._get_dependency_tree(p, extra, version_req, depth, verbose=verbose, upward=True, ppend=ppend)
-                results += a if (len(a[0])>1 or extra=="") else []
-
-        rawtext = json.dumps(results, indent=indent)
-        lines = [l[2*indent:] for l in rawtext.split("\n") if len(l.strip()) > 2]
-        return "\n".join(filter(None, lines)).replace('"', "")
+                results += a if a and (a[0]["depends"] or extra=="") else []
+        return self._format_tree(results, indent, format, "up")
 
     def description(self, pp: str) -> None:
         """Return package description or None if not found."""
