@@ -278,7 +278,7 @@ def main(test=False):
     parser.add_argument("-p",dest="pipdown",action="store_true",help="show Package (!= missing) dependencies of the given package[option], [.]=all: wppm -p pandas[.]")
     parser.add_argument("-r", dest="pipup", action="store_true", help=f"show Reverse (!= constraining) dependancies of the given package[option]: wppm -r pytest![test]")
     parser.add_argument("-l", dest="levels", type=int, default=-1, help="show 'LEVELS' levels of dependencies (with -p, -r): wppm -p pandas -l1")
-    parser.add_argument("--json", dest="json", action="store_true", help="output the dependency tree as JSON (with -p, -r): wppm -p pandas[.] --json")
+    parser.add_argument("--json", dest="json", action="store_true", help="machine-readable JSON output (with -p, -r, -ls): wppm -p pandas[.] --json")
     parser.add_argument("-t", dest="target", default=sys.prefix, help=f'path to target Python distribution (default: "{sys.prefix}")')
     parser.add_argument("-i", "--install", action="store_true", help="install a given package wheel or pylock file (use pip for more features)")
     parser.add_argument("-u", "--uninstall", action="store_true", help="uninstall package  (use pip for more features)")
@@ -313,6 +313,9 @@ def main(test=False):
         for args_fname in args.fname:
             todo += [l for l in pip.pip_list(full=True) if bool(re.search(args_fname, l[0]))]
         todo  = sorted(set(todo)) #, key=lambda p: (p[0].lower(), p[2])
+        if args.json:
+            print(json.dumps([{"package": p, "version": v, "summary": s} for p, v, s in todo], indent=4))
+            sys.exit()
         titles = [['Package', 'Version', 'Summary'], ['_' * max(x, 6) for x in utils.columns_width(todo)]]
         listed = utils.formatted_list(titles + todo, max_width=70)
         for p in listed:
