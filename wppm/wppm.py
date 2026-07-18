@@ -79,10 +79,10 @@ class Distribution:
         md += "\n"
         return md
     
-    def generate_package_index_markdown(self, python_executable_directory: str|None = None, winpyver2: str|None = None,
+    def get_package_index_data(self, python_executable_directory: str|None = None, winpyver2: str|None = None,
                                          flavor: str|None = None, architecture_bits: int|None = None
-                                         , release_level: str|None = None, wheeldir: str|None = None) -> str:
-        """Generates a Markdown formatted package index page."""
+                                         , release_level: str|None = None, wheeldir: str|None = None) -> dict:
+        """Collects the package index data: distribution identity, tools, packages, wheelhouse."""
         my_ver , my_arch = utils.get_python_infos(python_executable_directory or self.target)
         my_winpyver2 = winpyver2 or os.getenv("WINPYVER2","")
         my_winpyver2 = my_winpyver2 if my_winpyver2 != "" else my_ver
@@ -97,14 +97,35 @@ class Distribution:
             wheelhouse_list = [(name, f"https://pypi.org/project/{name}", version, utils.sum_up(summary))
                for name, version, summary in wh.list_packages_with_metadata(str(my_wheeldir)) ]
 
-        return f"""## WinPython {my_winpyver2 + my_flavor}
+        as_records = lambda items: [{"name": n, "url": u, "version": v, "summary": s} for n, u, v, s in items]
+        return {
+            "distribution": {
+                "winpython": my_winpyver2 + my_flavor,
+                "python_version": my_ver,
+                "architecture_bits": my_arch,
+                "release_level": my_release_level,
+            },
+            "tools": as_records(tools_list),
+            "packages": as_records(package_list),
+            "wheelhouse": as_records(wheelhouse_list),
+        }
 
-The following packages are included in WinPython-{my_arch}bit v{my_winpyver2 + my_flavor} {my_release_level}.
+    def generate_package_index_markdown(self, python_executable_directory: str|None = None, winpyver2: str|None = None,
+                                         flavor: str|None = None, architecture_bits: int|None = None
+                                         , release_level: str|None = None, wheeldir: str|None = None) -> str:
+        """Generates a Markdown formatted package index page."""
+        data = self.get_package_index_data(python_executable_directory, winpyver2, flavor, architecture_bits, release_level, wheeldir)
+        d = data["distribution"]
+        as_tuples = lambda items: [(i["name"], i["url"], i["version"], i["summary"]) for i in items]
+
+        return f"""## WinPython {d["winpython"]}
+
+The following packages are included in WinPython-{d["architecture_bits"]}bit v{d["winpython"]} {d["release_level"]}.
 
 
-{self.render_markdown_for_list("Tools", tools_list)}
-{self.render_markdown_for_list("Python packages", package_list)}
-{self.render_markdown_for_list("WheelHouse packages", wheelhouse_list)}
+{self.render_markdown_for_list("Tools", as_tuples(data["tools"]))}
+{self.render_markdown_for_list("Python packages", as_tuples(data["packages"]))}
+{self.render_markdown_for_list("WheelHouse packages", as_tuples(data["wheelhouse"]))}
 """
 
     def find_package(self, name: str) -> Package | None:
@@ -257,6 +278,9 @@ if "%WINPYDIR%"=="" call "%~dp0..\..\scripts\env.bat"
         self._print_done()
 
 def main(test=False):
+    # package summaries may contain characters the console codepage can't encode (emoji): don't crash
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
 
     registerWinPythonHelp = f"Register WinPython: associate file extensions, icons and context menu with this WinPython"
     unregisterWinPythonHelp = f"Unregister WinPython: de-associate file extensions, icons and context menu from this WinPython"
@@ -278,7 +302,7 @@ def main(test=False):
     parser.add_argument("-p",dest="pipdown",action="store_true",help="show Package (!= missing) dependencies of the given package[option], [.]=all: wppm -p pandas[.]")
     parser.add_argument("-r", dest="pipup", action="store_true", help=f"show Reverse (!= constraining) dependancies of the given package[option]: wppm -r pytest![test]")
     parser.add_argument("-l", dest="levels", type=int, default=-1, help="show 'LEVELS' levels of dependencies (with -p, -r): wppm -p pandas -l1")
-    parser.add_argument("--json", dest="json", action="store_true", help="machine-readable JSON output (with -p, -r, -ls): wppm -p pandas[.] --json")
+    parser.add_argument("--json", dest="json", action="store_true", help="machine-readable JSON output (with -p, -r, -ls, -md): wppm -p pandas[.] --json")
     parser.add_argument("-t", dest="target", default=sys.prefix, help=f'path to target Python distribution (default: "{sys.prefix}")')
     parser.add_argument("-i", "--install", action="store_true", help="install a given package wheel or pylock file (use pip for more features)")
     parser.add_argument("-u", "--uninstall", action="store_true", help="uninstall package  (use pip for more features)")
@@ -372,6 +396,9 @@ def main(test=False):
             p = subprocess.Popen(["start", "cmd", "/k",dist.python_exe, "-c" , cmd_mov], shell = True,  cwd=dist.target)
             sys.exit()
         if args.markdown:
+            if args.json:
+                print(json.dumps(dist.get_package_index_data(wheeldir=args.wheelsource), indent=4))
+                sys.exit()
             default = dist.generate_package_index_markdown()
             if args.wheelsource:
                 compare = dist.generate_package_index_markdown(wheeldir = args.wheelsource)
