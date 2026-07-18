@@ -85,6 +85,7 @@ class Distribution:
         """Collects the package index data: distribution identity, tools, packages, wheelhouse."""
         my_ver , my_arch = utils.get_python_infos(python_executable_directory or self.target)
         my_winpyver2 = winpyver2 or os.getenv("WINPYVER2","")
+        is_winpython = my_winpyver2 != ""   # otherwise a plain Python: don't brand it WinPython
         my_winpyver2 = my_winpyver2 if my_winpyver2 != "" else my_ver
         my_flavor = flavor or os.getenv("WINPYFLAVOR", "")
         my_release_level = release_level or  os.getenv("WINPYVER", "").replace(my_winpyver2+my_flavor, "")
@@ -100,7 +101,8 @@ class Distribution:
         as_records = lambda items: [{"name": n, "url": u, "version": v, "summary": s} for n, u, v, s in items]
         return {
             "distribution": {
-                "winpython": my_winpyver2 + my_flavor,
+                "name": "WinPython" if is_winpython else "Python",
+                "version": my_winpyver2 + my_flavor,
                 "python_version": my_ver,
                 "architecture_bits": my_arch,
                 "release_level": my_release_level,
@@ -118,9 +120,9 @@ class Distribution:
         d = data["distribution"]
         as_tuples = lambda items: [(i["name"], i["url"], i["version"], i["summary"]) for i in items]
 
-        return f"""## WinPython {d["winpython"]}
+        return f"""## {d["name"]} {d["version"]}
 
-The following packages are included in WinPython-{d["architecture_bits"]}bit v{d["winpython"]} {d["release_level"]}.
+The following packages are included in {d["name"]}-{d["architecture_bits"]}bit v{d["version"]} {d["release_level"]}.
 
 
 {self.render_markdown_for_list("Tools", as_tuples(data["tools"]))}
